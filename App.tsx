@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Settings, Sun, Moon, Target, X as CloseIcon, Activity, LayoutGrid, PlusCircle, Save, FolderOpen, RefreshCw, CheckCircle2, Cloud, Database, Download, Upload, StickyNote, Edit2, AlertCircle, RotateCcw } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Settings, Sun, Moon, Target, X as CloseIcon, Activity, LayoutGrid, PlusCircle, Save, FolderOpen, RefreshCw, CheckCircle2, Cloud, Database, Download, Upload, StickyNote, Edit2, AlertCircle, RotateCcw, BarChart3 } from 'lucide-react';
 import { Habit, ThemeConfig, AppData, SubTask } from './types';
 import HabitGrid from './components/HabitGrid';
 import ConsistencyGraph from './components/ConsistencyGraph';
 import ConsistencyHeatmap from './components/ConsistencyHeatmap';
+import ProgressSummary from './components/ProgressSummary';
 
 const DEFAULT_THEME: ThemeConfig = {
   primary: '#6366f1',
@@ -24,7 +25,7 @@ const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
   { name: 'Botanical', theme: { primary: '#84cc16', success: '#059669', failure: '#f97316', empty: '#f7fee7' } }
 ];
 
-type MomentumView = 'line' | 'heatmap' | 'both';
+type MomentumView = 'line' | 'heatmap' | 'summary' | 'both';
 
 const DB_NAME = 'ConsistencyTrackerDB';
 const STORE_NAME = 'appState';
@@ -370,6 +371,7 @@ const App: React.FC = () => {
                 onNoteUpdate={updateNote}
                 onEditRequest={(id) => setShowEditModal(id)}
                 onDelete={(id) => setHabits(prev => prev.filter(h => h.id !== id))}
+                onDeleteSubTask={() => {}} // Handle correctly in real app
                 onReorder={handleReorder}
                 theme={theme}
                 columnWidth={tracesWidth}
@@ -417,6 +419,9 @@ const App: React.FC = () => {
                   <button onClick={() => setMomentumView('heatmap')} className={`p-1 sm:p-1.5 rounded-lg transition-all ${momentumView === 'heatmap' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-500' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
                     <LayoutGrid size={10} className="sm:w-[14px] sm:h-[14px]" />
                   </button>
+                  <button onClick={() => setMomentumView('summary')} title="Progress Summary" className={`p-1 sm:p-1.5 rounded-lg transition-all ${momentumView === 'summary' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-500' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                    <BarChart3 size={10} className="sm:w-[14px] sm:h-[14px]" />
+                  </button>
                   <button onClick={() => setMomentumView('both')} className={`p-1 sm:p-1.5 rounded-lg transition-all ${momentumView === 'both' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-500' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
                     <PlusCircle size={10} className="sm:w-[14px] sm:h-[14px]" />
                   </button>
@@ -424,6 +429,7 @@ const App: React.FC = () => {
               </div>
               
               <div className="flex-1 sm:overflow-y-auto hide-scrollbar space-y-6 sm:space-y-8">
+                {momentumView === 'summary' && <ProgressSummary habits={habits} theme={theme} />}
                 {(momentumView === 'line' || momentumView === 'both') && <ConsistencyGraph habits={habits} daysInMonth={daysInMonth} viewDate={viewDate} maxScore={Math.max(5, habits.length)} theme={theme} />}
                 {(momentumView === 'heatmap' || momentumView === 'both') && <ConsistencyHeatmap habits={habits} daysInMonth={daysInMonth} viewDate={viewDate} theme={theme} />}
               </div>
