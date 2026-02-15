@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Consistency Tracker Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+            },
+            colors: {
+              slate: {
+                950: '#020617',
+                900: '#070a13',
+                850: '#0e1421',
+                800: '#171e2e',
+              }
+            },
+            animation: {
+              'premium-in': 'premium-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'premium-backdrop': 'premium-backdrop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            },
+            keyframes: {
+              'premium-in': {
+                '0%': { opacity: '0', transform: 'scale(0.96) translateY(10px)' },
+                '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+              },
+              'premium-backdrop': {
+                '0%': { opacity: '0', backdropFilter: 'blur(0px)' },
+                '100%': { opacity: '1', backdropFilter: 'blur(16px)' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --theme-primary: #6366f1;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            background-image: 
+                radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--theme-primary) 6%, transparent) 0%, transparent 40%),
+                radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--theme-primary) 6%, transparent) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--theme-primary) 6%, transparent) 0%, transparent 40%),
+                radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--theme-primary) 6%, transparent) 0%, transparent 40%);
+            background-attachment: fixed;
+            -webkit-tap-highlight-color: transparent;
+            transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .dark body {
+            background-color: #05070a;
+            background-image: 
+                radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--theme-primary) 22%, transparent) 0%, transparent 50%),
+                radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--theme-primary) 22%, transparent) 0%, transparent 50%),
+                radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--theme-primary) 22%, transparent) 0%, transparent 50%),
+                radial-gradient(circle at 0% 100%, color-mix(in srgb, var(--theme-primary) 22%, transparent) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--theme-primary) 12%, transparent) 0%, transparent 70%);
+        }
+
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .mesh-pattern {
+            background-image: radial-gradient(color-mix(in srgb, var(--theme-primary) 20%, #cbd5e1) 0.8px, transparent 0.8px);
+            background-size: 32px 32px;
+            transition: background-image 0.5s ease;
+        }
+        .dark .mesh-pattern {
+            background-image: radial-gradient(color-mix(in srgb, var(--theme-primary) 30%, #334155) 0.5px, transparent 0.5px);
+            opacity: 0.3;
+        }
+
+        @keyframes pop-in {
+            0% { transform: scale(0.6); opacity: 0; }
+            70% { transform: scale(1.15); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .animate-pop {
+            animation: pop-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        .resizer-handle {
+            width: 4px;
+            cursor: col-resize;
+            transition: background-color 0.2s;
+        }
+        .resizer-handle:hover, .resizer-handle.active {
+            background-color: var(--theme-primary);
+        }
+
+        .dragging-row {
+            opacity: 0.5;
+            background: #f1f5f9;
+        }
+        .dark .dragging-row {
+            background: #1e293b;
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="antialiased text-slate-900 dark:text-slate-100">
+    <div class="fixed inset-0 mesh-pattern pointer-events-none z-0"></div>
+    <div id="root" class="relative z-10"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
