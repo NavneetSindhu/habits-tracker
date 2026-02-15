@@ -1,7 +1,6 @@
-
 import React, { useMemo, useState } from 'react';
 import { Habit, ThemeConfig } from '../types';
-import { X, CheckCircle2, Circle } from 'lucide-react';
+import { X, CheckCircle2, Circle, MinusCircle, XCircle } from 'lucide-react';
 
 interface ConsistencyHeatmapProps {
   habits: Habit[];
@@ -36,11 +35,24 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
     return {
       day: selectedDay,
       date: dateKey,
-      habits: habits.map(h => ({
-        id: h.id,
-        name: h.name,
-        completed: h.data[dateKey] === 1
-      }))
+      habits: habits.map(h => {
+        const subTasks = h.subTasks;
+        const subTaskData = h.subTaskData[dateKey] || {};
+        const completedCount = subTasks.filter(st => subTaskData[st.id]).length;
+        
+        let status: 'done' | 'partial' | 'cross' | 'empty' = 'empty';
+        if (h.data[dateKey] === 1) status = 'done';
+        else if (h.data[dateKey] === -1) status = 'cross';
+        else if (completedCount > 0 && completedCount < subTasks.length) status = 'partial';
+        
+        return {
+          id: h.id,
+          name: h.name,
+          status,
+          subTaskCount: subTasks.length,
+          subTaskCompletedCount: completedCount
+        };
+      })
     };
   }, [selectedDay, habits, viewDate]);
 
@@ -85,7 +97,6 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
           ))}
         </div>
 
-        {/* Fixed Position Tooltip to avoid Z-Index Issues */}
         {hoveredDay && !selectedDay && (
           <div 
             className="fixed z-[6000] pointer-events-none transition-all duration-300 animate-in fade-in zoom-in-95 ease-out shadow-2xl"
@@ -103,7 +114,6 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
           </div>
         )}
 
-        {/* Selected Day Detailed View */}
         {selectedDayDetails && (
           <div 
             className="fixed inset-0 z-[7000] flex items-center justify-center p-4 sm:p-6 bg-slate-950/40 animate-premium-backdrop"
@@ -122,7 +132,6 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
                   onClick={() => setSelectedDay(null)}
                   className="p-1.5 sm:p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors text-slate-400"
                 >
-                  {/* Fix: replaced invalid sm:size with Tailwind classes */}
                   <X size={18} className="sm:w-5 sm:h-5" />
                 </button>
               </div>
@@ -134,16 +143,22 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
                       key={h.id}
                       className="flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 transition-all hover:border-indigo-500/30"
                     >
-                      <span className={`text-[11px] sm:text-xs font-bold ${h.completed ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`}>
-                        {h.name}
-                      </span>
-                      {h.completed ? (
-                        /* Fix: replaced invalid sm:size with Tailwind classes */
-                        <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px] text-emerald-500" />
-                      ) : (
-                        /* Fix: replaced invalid sm:size with Tailwind classes */
-                        <Circle size={16} className="sm:w-[18px] sm:h-[18px] text-slate-200 dark:text-slate-800" />
-                      )}
+                      <div className="flex flex-col">
+                        <span className={`text-[11px] sm:text-xs font-bold ${h.status === 'done' ? 'text-slate-900 dark:text-white' : 'text-slate-400 dark:text-slate-500'}`}>
+                          {h.name}
+                        </span>
+                        {h.subTaskCount > 0 && (
+                          <span className="text-[7px] sm:text-[8px] font-black uppercase tracking-widest text-slate-400 mt-0.5">
+                            {h.subTaskCompletedCount}/{h.subTaskCount} Tasks Done
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center">
+                        {h.status === 'done' && <CheckCircle2 size={16} className="sm:w-[18px] sm:h-[18px] text-emerald-500" />}
+                        {h.status === 'partial' && <MinusCircle size={16} className="sm:w-[18px] sm:h-[18px] text-amber-500" />}
+                        {h.status === 'cross' && <XCircle size={16} className="sm:w-[18px] sm:h-[18px] text-rose-500" />}
+                        {h.status === 'empty' && <Circle size={16} className="sm:w-[18px] sm:h-[18px] text-slate-200 dark:text-slate-800" />}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -152,9 +167,9 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
               </div>
 
               <div className="mt-6 sm:mt-8 pt-3 sm:pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Daily Success</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-slate-400">Completion Score</span>
                 <span className="text-base sm:text-lg font-black text-slate-900 dark:text-white">
-                  {Math.round((selectedDayDetails.habits.filter(h => h.completed).length / Math.max(1, selectedDayDetails.habits.length)) * 100)}%
+                  {Math.round((selectedDayDetails.habits.filter(h => h.status === 'done').length / Math.max(1, selectedDayDetails.habits.length)) * 100)}%
                 </span>
               </div>
             </div>
@@ -170,7 +185,7 @@ const ConsistencyHeatmap: React.FC<ConsistencyHeatmapProps> = ({ habits, daysInM
                 ))}
             </div>
             <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] text-slate-300 dark:text-slate-600">
-                Heatmap v2.1
+                Heatmap v2.2
             </p>
         </div>
       </div>
