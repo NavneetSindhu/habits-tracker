@@ -1,10 +1,12 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Plus, ChevronLeft, ChevronRight, Settings, Sun, Moon, Target, X as CloseIcon, Activity, LayoutGrid, PlusCircle, Save, FolderOpen, RefreshCw, CheckCircle2, Cloud, Database, Download, Upload, StickyNote, Edit2, AlertCircle, RotateCcw, BarChart3 } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Settings, Sun, Moon, Target, X as CloseIcon, Activity, LayoutGrid, PlusCircle, Save, FolderOpen, RefreshCw, CheckCircle2, Cloud, Database, Download, Upload, StickyNote, Edit2, AlertCircle, RotateCcw, BarChart3, LayoutDashboard } from 'lucide-react';
 import { Habit, ThemeConfig, AppData, SubTask } from './types';
 import HabitGrid from './components/HabitGrid';
 import ConsistencyGraph from './components/ConsistencyGraph';
 import ConsistencyHeatmap from './components/ConsistencyHeatmap';
 import ProgressSummary from './components/ProgressSummary';
+import DetailedDashboard from './components/DetailedDashboard';
 
 const DEFAULT_THEME: ThemeConfig = {
   primary: '#6366f1',
@@ -36,7 +38,8 @@ const App: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [viewDate, setViewDate] = useState(() => new Date());
   const [momentumView, setMomentumView] = useState<MomentumView>('heatmap');
-  const [tracesWidth, setTracesWidth] = useState(110); // Even smaller default for mobile clarity
+  const [tracesWidth, setTracesWidth] = useState(110);
+  const [showDashboard, setShowDashboard] = useState(false);
   
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState<string | null>(null);
@@ -45,45 +48,39 @@ const App: React.FC = () => {
   const [newSubTasks, setNewSubTasks] = useState<string[]>([]);
   const [dbReady, setDbReady] = useState(false);
 
-  // Initialize Responsive Defaults
   useEffect(() => {
     if (window.innerWidth > 640) {
       setTracesWidth(160);
     }
   }, []);
 
-  // Initialize IndexedDB
   useEffect(() => {
     const request = indexedDB.open(DB_NAME, 1);
-    
     request.onupgradeneeded = (event: any) => {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
     };
-
     request.onsuccess = (event: any) => {
       const db = event.target.result;
       const transaction = db.transaction(STORE_NAME, 'readonly');
       const store = transaction.objectStore(STORE_NAME);
       const getRequest = store.get('main_data');
-
       getRequest.onsuccess = () => {
         const savedData = getRequest.result as AppData;
         if (savedData) {
           if (savedData.habits) {
-            const migrated = savedData.habits.map(h => ({
+            setHabits(savedData.habits.map(h => ({
               ...h,
               notes: h.notes || {},
               subTasks: h.subTasks || [],
               subTaskData: h.subTaskData || {}
-            }));
-            setHabits(migrated);
+            })));
           }
           if (savedData.theme) setTheme(savedData.theme);
           if (typeof savedData.darkMode === 'boolean') setDarkMode(savedData.darkMode);
-          if (savedData.momentumView) setMomentumView(savedData.momentumView);
+          if (savedData.momentumView) setMomentumView(savedData.momentumView as MomentumView);
           if (savedData.tracesColumnWidth) setTracesWidth(savedData.tracesColumnWidth);
         } else {
           setHabits([
@@ -96,61 +93,44 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Save to IndexedDB whenever state changes
   useEffect(() => {
     if (!dbReady) return;
-
     const timeout = setTimeout(() => {
       const request = indexedDB.open(DB_NAME, 1);
       request.onsuccess = (event: any) => {
         const db = event.target.result;
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
-        const dataToSave: AppData = {
-          habits,
-          theme,
-          darkMode,
-          momentumView,
-          tracesColumnWidth: tracesWidth
-        };
-        store.put(dataToSave, 'main_data');
+        store.put({ habits, theme, darkMode, momentumView, tracesColumnWidth: tracesWidth }, 'main_data');
       };
     }, 500);
-
     return () => clearTimeout(timeout);
   }, [habits, theme, darkMode, momentumView, tracesWidth, dbReady]);
 
-  // Clean up effect: Mark unmarked tasks from past days as crossed
   useEffect(() => {
     if (!dbReady || habits.length === 0) return;
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     setHabits(prev => {
       let changed = false;
       const nextHabits = prev.map(habit => {
         const nextData = { ...habit.data };
         let habitChanged = false;
-
         for (let i = 1; i <= 60; i++) {
           const pastDate = new Date();
           pastDate.setDate(today.getDate() - i);
-          const dateKey = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, '0')}-${String(pastDate.getDate()).padStart(2, '0')}`;
-          
+          const dateKey = pastDate.toISOString().split('T')[0];
           if (nextData[dateKey] === undefined || nextData[dateKey] === 0) {
-            nextData[dateKey] = -1; // Auto-cross
+            nextData[dateKey] = -1;
             habitChanged = true;
           }
         }
-
         if (habitChanged) {
           changed = true;
           return { ...habit, data: nextData };
         }
         return habit;
       });
-
       return changed ? nextHabits : prev;
     });
   }, [dbReady, habits.length]);
@@ -160,126 +140,117 @@ const App: React.FC = () => {
   }, [theme.primary]);
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [darkMode]);
 
+  // Fix for: Cannot find name 'changeMonth'
+  const changeMonth = (delta: number) => {
+    setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + delta, 1));
+  };
+
+  // Fix for: Cannot find name 'monthName'
+  const monthName = useMemo(() => {
+    return viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  }, [viewDate]);
+
+  // Fix for: Cannot find name 'handleReorder'
+  const handleReorder = (draggedId: string, targetId: string) => {
+    setHabits(prev => {
+      const draggedIndex = prev.findIndex(h => h.id === draggedId);
+      const targetIndex = prev.findIndex(h => h.id === targetId);
+      if (draggedIndex === -1 || targetIndex === -1) return prev;
+      const newHabits = [...prev];
+      const [draggedItem] = newHabits.splice(draggedIndex, 1);
+      newHabits.splice(targetIndex, 0, draggedItem);
+      return newHabits;
+    });
+  };
+
+  // Fix for: Cannot find name 'exportData'
   const exportData = () => {
-    const data: AppData = { habits, theme, darkMode, momentumView, tracesColumnWidth: tracesWidth };
+    const data: AppData = {
+      habits,
+      theme,
+      darkMode,
+      momentumView: momentumView === 'summary' ? 'heatmap' : (momentumView as any),
+      tracesColumnWidth: tracesWidth
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `consistency-export-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tracing-data-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
     URL.revokeObjectURL(url);
   };
 
-  const importData = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  // Fix for: Cannot find name 'importData'
+  const importData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = (event) => {
       try {
-        const data: AppData = JSON.parse(e.target?.result as string);
+        const data = JSON.parse(event.target?.result as string) as AppData;
         if (data.habits) setHabits(data.habits);
         if (data.theme) setTheme(data.theme);
         if (typeof data.darkMode === 'boolean') setDarkMode(data.darkMode);
-        if (data.momentumView) setMomentumView(data.momentumView);
+        if (data.momentumView) setMomentumView(data.momentumView as MomentumView);
         if (data.tracesColumnWidth) setTracesWidth(data.tracesColumnWidth);
         setShowSettings(false);
       } catch (err) {
-        alert('Invalid JSON file');
+        console.error("Import failed", err);
+        alert("Failed to import data. Please check the file format.");
       }
     };
     reader.readAsText(file);
   };
 
+  // Fix for: Cannot find name 'resetData'
   const resetData = () => {
-    if (window.confirm('WARNING: This will permanently erase all habits and trace data. Continue?')) {
+    if (window.confirm("Are you sure you want to reset all data? This cannot be undone.")) {
       setHabits([
         { id: '1', name: 'Deep Work Session', data: {}, notes: {}, subTasks: [], subTaskData: {} },
         { id: '2', name: 'Physical Training', data: {}, notes: {}, subTasks: [], subTaskData: {} }
       ]);
       setTheme(DEFAULT_THEME);
+      setDarkMode(false);
       setMomentumView('heatmap');
-      setTracesWidth(window.innerWidth > 640 ? 160 : 110);
+      setTracesWidth(160);
       setShowSettings(false);
     }
   };
 
-  const daysInMonth = useMemo(() => new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate(), [viewDate]);
-
-  const stats = useMemo(() => {
-    if (habits.length === 0) return { successRate: 0, totalChecks: 0, totalMissed: 0 };
-    let totalChecks = 0;
-    let totalMissed = 0;
-    const year = viewDate.getFullYear();
-    const month = String(viewDate.getMonth() + 1).padStart(2, '0');
-    
-    habits.forEach(habit => {
-      for (let d = 1; d <= daysInMonth; d++) {
-        const val = habit.data[`${year}-${month}-${String(d).padStart(2, '0')}`];
-        if (val === 1) totalChecks++;
-        else if (val === -1) totalMissed++;
-      }
-    });
-    const possible = habits.length * daysInMonth;
-    return { 
-      successRate: possible === 0 ? 0 : Math.round((totalChecks / possible) * 100), 
-      totalChecks,
-      totalMissed
-    };
-  }, [habits, viewDate, daysInMonth]);
-
   const toggleStatus = (habitId: string, day: number, type: 'check' | 'cross' | string) => {
-    const dateKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    
+    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    const dateKey = d.toISOString().split('T')[0];
     setHabits(prev => prev.map(habit => {
       if (habit.id !== habitId) return habit;
-      
       const subTask = habit.subTasks.find(st => st.id === type);
       if (subTask) {
         const currentSubTaskData = { ...(habit.subTaskData[dateKey] || {}) };
         currentSubTaskData[subTask.id] = !currentSubTaskData[subTask.id];
-        
-        const nextSubTaskData = {
-          ...habit.subTaskData,
-          [dateKey]: currentSubTaskData
-        };
-
+        const nextSubTaskData = { ...habit.subTaskData, [dateKey]: currentSubTaskData };
         const allChecked = habit.subTasks.every(st => currentSubTaskData[st.id]);
+        const noneChecked = habit.subTasks.every(st => !currentSubTaskData[st.id]);
         const nextMainData = { ...habit.data };
-        if (allChecked) {
-          nextMainData[dateKey] = 1;
-        } else if (nextMainData[dateKey] === 1) {
-          nextMainData[dateKey] = 0;
-        }
-
-        return {
-          ...habit,
-          data: nextMainData,
-          subTaskData: nextSubTaskData
-        };
+        if (allChecked) nextMainData[dateKey] = 1;
+        else if (noneChecked) nextMainData[dateKey] = -1;
+        else nextMainData[dateKey] = 0;
+        return { ...habit, data: nextMainData, subTaskData: nextSubTaskData };
       }
-
       const currentVal = habit.data[dateKey] || 0;
       let newVal = 0;
       if (type === 'check') newVal = currentVal === 1 ? 0 : 1;
       else if (type === 'cross') newVal = currentVal === -1 ? 0 : -1;
-      
       return { ...habit, data: { ...habit.data, [dateKey]: newVal } };
     }));
   };
 
   const updateNote = (habitId: string, day: number, note: string) => {
-    const dateKey = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    const dateKey = d.toISOString().split('T')[0];
     setHabits(prev => prev.map(habit => {
       if (habit.id !== habitId) return habit;
       return { ...habit, notes: { ...habit.notes, [dateKey]: note } };
@@ -302,30 +273,35 @@ const App: React.FC = () => {
     setShowAddModal(false);
   }, [newHabitName, newSubTasks]);
 
-  const updateHabit = (id: string, name: string, subTasks: SubTask[]) => {
-    setHabits(prev => prev.map(h => h.id === id ? { ...h, name, subTasks } : h));
-    setShowEditModal(null);
-  };
+  const daysInMonth = useMemo(() => new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate(), [viewDate]);
 
-  const handleReorder = (draggedId: string, targetId: string) => {
-    setHabits(prev => {
-      const oldIndex = prev.findIndex(h => h.id === draggedId);
-      const newIndex = prev.findIndex(h => h.id === targetId);
-      const newHabits = [...prev];
-      const [removed] = newHabits.splice(oldIndex, 1);
-      newHabits.splice(newIndex, 0, removed);
-      return newHabits;
+  const stats = useMemo(() => {
+    if (habits.length === 0) return { successRate: 0, totalChecks: 0, totalMissed: 0 };
+    let totalChecks = 0;
+    let totalMissed = 0;
+    const year = viewDate.getFullYear();
+    const month = String(viewDate.getMonth() + 1).padStart(2, '0');
+    habits.forEach(habit => {
+      for (let d = 1; d <= daysInMonth; d++) {
+        const d_obj = new Date(year, parseInt(month)-1, d);
+        const dateKey = d_obj.toISOString().split('T')[0];
+        if (habit.data[dateKey] === 1) totalChecks++;
+        else if (habit.data[dateKey] === -1) totalMissed++;
+      }
     });
-  };
+    const possible = habits.length * daysInMonth;
+    return { successRate: possible === 0 ? 0 : Math.round((totalChecks / possible) * 100), totalChecks, totalMissed };
+  }, [habits, viewDate, daysInMonth]);
 
-  const changeMonth = (offset: number) => setViewDate(prev => {
-    const next = new Date(prev);
-    next.setMonth(prev.getMonth() + offset);
-    return next;
-  });
-
-  const monthName = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(viewDate);
-  const editingHabit = useMemo(() => habits.find(h => h.id === showEditModal), [habits, showEditModal]);
+  if (showDashboard) {
+    return (
+      <DetailedDashboard 
+        habits={habits} 
+        theme={theme} 
+        onClose={() => setShowDashboard(false)} 
+      />
+    );
+  }
 
   return (
     <div className="h-screen flex flex-col transition-colors duration-500 overflow-y-auto sm:overflow-hidden safe-top safe-bottom">
@@ -341,6 +317,13 @@ const App: React.FC = () => {
             <p className="text-[8px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400">Consistency engine v2.2</p>
           </div>
           <div className="flex gap-1.5 sm:gap-2">
+            <button 
+              onClick={() => setShowDashboard(true)} 
+              className="flex items-center gap-2 px-3 py-2 sm:px-4 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-sm transition-all active:scale-95 group overflow-hidden"
+            >
+              <LayoutDashboard size={18} className="text-indigo-500 group-hover:rotate-12 transition-transform" />
+              <span className="hidden sm:inline text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Dashboard</span>
+            </button>
             <button onClick={() => setDarkMode(!darkMode)} className="p-2 sm:p-2.5 rounded-xl bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 shadow-sm transition-all active:scale-95 group">
               {darkMode ? <Sun size={18} className="sm:w-5 sm:h-5 text-yellow-400 group-hover:rotate-45 transition-transform" /> : <Moon size={18} className="sm:w-5 sm:h-5 text-slate-500" />}
             </button>
@@ -371,7 +354,6 @@ const App: React.FC = () => {
                 onNoteUpdate={updateNote}
                 onEditRequest={(id) => setShowEditModal(id)}
                 onDelete={(id) => setHabits(prev => prev.filter(h => h.id !== id))}
-                onDeleteSubTask={() => {}} // Handle correctly in real app
                 onReorder={handleReorder}
                 theme={theme}
                 columnWidth={tracesWidth}
@@ -427,7 +409,6 @@ const App: React.FC = () => {
                   </button>
                 </div>
               </div>
-              
               <div className="flex-1 sm:overflow-y-auto hide-scrollbar space-y-6 sm:space-y-8">
                 {momentumView === 'summary' && <ProgressSummary habits={habits} theme={theme} />}
                 {(momentumView === 'line' || momentumView === 'both') && <ConsistencyGraph habits={habits} daysInMonth={daysInMonth} viewDate={viewDate} maxScore={Math.max(5, habits.length)} theme={theme} />}
@@ -436,103 +417,6 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* Modals with responsive sizing */}
-        {showAddModal && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-slate-950/40 animate-premium-backdrop" onClick={() => setShowAddModal(false)}>
-            <div className="bg-white dark:bg-slate-850 w-full max-w-md rounded-[1.5rem] sm:rounded-[2.5rem] p-6 sm:p-10 shadow-2xl animate-premium-in" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">New Habit</h3>
-                    <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-slate-600 dark:text-slate-300 mt-1">Daily goals engine</p>
-                </div>
-                <button onClick={() => setShowAddModal(false)} className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"><CloseIcon size={18} /></button>
-              </div>
-              <div className="space-y-4 mb-8">
-                <input 
-                  autoFocus type="text" placeholder="Trace Name..." 
-                  className="w-full px-5 py-3 sm:py-4 rounded-xl sm:rounded-2xl border-2 border-slate-100 dark:border-slate-800 dark:bg-slate-900 outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-bold text-sm sm:text-base transition-all"
-                  value={newHabitName} onChange={(e) => setNewHabitName(e.target.value)}
-                />
-                <div className="space-y-2">
-                  <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sub-Tasks (Optional)</p>
-                  {newSubTasks.map((st, i) => (
-                    <div key={i} className="flex gap-2">
-                      <input 
-                        type="text" placeholder={`Task ${i+1}`}
-                        className="flex-1 px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800 dark:bg-slate-900 outline-none text-[11px] sm:text-sm font-bold"
-                        value={st} onChange={(e) => {
-                          const updated = [...newSubTasks];
-                          updated[i] = e.target.value;
-                          setNewSubTasks(updated);
-                        }}
-                      />
-                      <button onClick={() => setNewSubTasks(prev => prev.filter((_, idx) => idx !== i))} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><CloseIcon size={14}/></button>
-                    </div>
-                  ))}
-                  <button onClick={() => setNewSubTasks(prev => [...prev, ''])} className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-indigo-500 flex items-center gap-1 hover:underline">
-                    <Plus size={10} /> Add Sub-Task
-                  </button>
-                </div>
-              </div>
-              <div className="flex gap-2.5 sm:gap-4">
-                <button onClick={() => setShowAddModal(false)} className="flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl bg-slate-50 dark:bg-slate-800 font-black text-slate-600 dark:text-slate-300 text-[8px] sm:text-[10px] uppercase tracking-widest transition-all">Cancel</button>
-                <button onClick={addHabit} style={{ backgroundColor: theme.primary }} className="flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl text-white font-black text-[8px] sm:text-[10px] uppercase tracking-widest shadow-lg transition-all">Save</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Edit Habit Modal */}
-        {showEditModal && editingHabit && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-slate-950/40 animate-premium-backdrop" onClick={() => setShowEditModal(null)}>
-            <div className="bg-white dark:bg-slate-850 w-full max-w-md rounded-[1.5rem] sm:rounded-[2.5rem] p-6 sm:p-10 shadow-2xl animate-premium-in" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h3 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">Edit Habit</h3>
-                    <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] text-slate-600 dark:text-slate-300 mt-1">Configuration</p>
-                </div>
-                <button onClick={() => setShowEditModal(null)} className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors"><CloseIcon size={18} /></button>
-              </div>
-              <div className="space-y-4 mb-8">
-                <input 
-                  autoFocus type="text" placeholder="Trace Name..." 
-                  className="w-full px-5 py-3 sm:py-4 rounded-xl sm:rounded-2xl border-2 border-slate-100 dark:border-slate-800 dark:bg-slate-900 outline-none focus:border-indigo-500 text-slate-900 dark:text-white font-bold text-sm sm:text-base transition-all"
-                  value={editingHabit.name} onChange={(e) => setHabits(prev => prev.map(h => h.id === editingHabit.id ? {...h, name: e.target.value} : h))}
-                />
-                <div className="space-y-2">
-                  <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Sub-Tasks</p>
-                  {editingHabit.subTasks.map((st, i) => (
-                    <div key={st.id} className="flex gap-2">
-                      <input 
-                        type="text" placeholder={`Task ${i+1}`}
-                        className="flex-1 px-3 py-1.5 sm:py-2 rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800 dark:bg-slate-900 outline-none text-[11px] sm:text-sm font-bold"
-                        value={st.name} onChange={(e) => {
-                          const updatedSubTasks = editingHabit.subTasks.map(s => s.id === st.id ? {...s, name: e.target.value} : s);
-                          setHabits(prev => prev.map(h => h.id === editingHabit.id ? {...h, subTasks: updatedSubTasks} : h));
-                        }}
-                      />
-                      <button onClick={() => {
-                        const updatedSubTasks = editingHabit.subTasks.filter(s => s.id !== st.id);
-                        setHabits(prev => prev.map(h => h.id === editingHabit.id ? {...h, subTasks: updatedSubTasks} : h));
-                      }} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><CloseIcon size={14}/></button>
-                    </div>
-                  ))}
-                  <button onClick={() => {
-                    const newSt: SubTask = { id: `${Date.now()}-${editingHabit.subTasks.length}`, name: '' };
-                    setHabits(prev => prev.map(h => h.id === editingHabit.id ? {...h, subTasks: [...h.subTasks, newSt]} : h));
-                  }} className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-indigo-500 flex items-center gap-1 hover:underline">
-                    <Plus size={10} /> Add Sub-Task
-                  </button>
-                </div>
-              </div>
-              <div className="flex gap-2.5 sm:gap-4">
-                <button onClick={() => setShowEditModal(null)} className="flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl bg-slate-50 dark:bg-slate-800 font-black text-slate-600 dark:text-slate-300 text-[8px] sm:text-[10px] uppercase tracking-widest transition-all">Discard</button>
-                <button onClick={() => setShowEditModal(null)} style={{ backgroundColor: theme.primary }} className="flex-1 py-3 sm:py-4 rounded-lg sm:rounded-xl text-white font-black text-[8px] sm:text-[10px] uppercase tracking-widest shadow-lg transition-all">Update</button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {showSettings && (
           <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-6 bg-slate-950/40 animate-premium-backdrop" onClick={() => setShowSettings(false)}>
@@ -574,22 +458,8 @@ const App: React.FC = () => {
                 </div>
                 <div className="space-y-6 sm:space-y-10">
                   <div>
-                    <h4 className="text-[9px] sm:text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-[0.3em] sm:tracking-[0.4em] mb-4 sm:mb-6">Palette Selection</h4>
-                    <div className="grid grid-cols-1 gap-2 sm:gap-3">
-                      {['primary', 'success', 'failure'].map(key => (
-                        <div key={key} className="flex items-center justify-between p-2 sm:p-3 bg-slate-50 dark:bg-slate-900 rounded-lg sm:rounded-xl border border-slate-100 dark:border-slate-800">
-                          <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 ml-1">{key}</span>
-                          <input type="color" value={(theme as any)[key]} onChange={e => setTheme({...theme, [key]: e.target.value})} className="w-5 h-5 sm:w-8 sm:h-8 rounded-lg cursor-pointer bg-transparent" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
                     <h4 className="text-[9px] sm:text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-[0.3em] sm:tracking-[0.4em] mb-4 sm:mb-6">Maintenance</h4>
-                    <button 
-                      onClick={resetData}
-                      className="w-full flex items-center justify-center gap-2 p-3 bg-rose-50 dark:bg-rose-950/20 border-2 border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-all group"
-                    >
+                    <button onClick={resetData} className="w-full flex items-center justify-center gap-2 p-3 bg-rose-50 dark:bg-rose-950/20 border-2 border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-all group">
                       <RotateCcw size={14} className="group-hover:-rotate-90 transition-transform duration-500" />
                       <span className="text-[8px] sm:text-[9px] font-black uppercase tracking-[0.1em]">Full Factory Reset</span>
                     </button>
