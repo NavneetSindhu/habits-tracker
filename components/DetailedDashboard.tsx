@@ -28,41 +28,39 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
 
   const analytics = useMemo(() => {
     const today = new Date();
-    const dayOfWeekCounts = Array(7).fill(0).map(() => ({ checked: 0, possible: 0 }));
+    today.setHours(0, 0, 0, 0);
     
-    const last6Months: Record<string, { checked: number, total: number }> = {};
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      last6Months[key] = { checked: 0, total: 0 };
+    // 1. Yearly Heatmap Logic (Last 364 days / 52 weeks)
+    const yearGridData: Array<Array<{ date: string, count: number }>> = [];
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - (52 * 7) + 1); // Exact start of a 52-week period ending today
+
+    for (let w = 0; w < 52; w++) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const currentDate = new Date(startDate);
+        currentDate.setDate(startDate.getDate() + (w * 7) + d);
+        const dateKey = currentDate.toISOString().split('T')[0];
+        
+        let dayChecks = 0;
+        habits.forEach(h => {
+          if (h.data[dateKey] === 1) dayChecks++;
+        });
+        
+        week.push({ date: dateKey, count: dayChecks });
+      }
+      yearGridData.push(week);
     }
 
-    const habitRankings = habits.map(h => {
-      const checks = Object.values(h.data).filter(v => v === 1).length;
-      const rate = Object.keys(h.data).length === 0 ? 0 : Math.round((checks / Object.keys(h.data).length) * 100);
-      return { id: h.id, name: h.name, rate, checks };
-    }).sort((a, b) => b.rate - a.rate);
-
-    const yearGrid: Record<string, number> = {};
-    
+    // 2. Weekly Focus (Day of week performance)
+    const dayOfWeekCounts = Array(7).fill(0).map(() => ({ checked: 0, possible: 0 }));
     habits.forEach(habit => {
       Object.entries(habit.data).forEach(([dateStr, status]) => {
         const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return;
         const day = d.getDay();
         dayOfWeekCounts[day].possible++;
-        if (status === 1) {
-          dayOfWeekCounts[day].checked++;
-          yearGrid[dateStr] = (yearGrid[dateStr] || 0) + 1;
-          const mKey = dateStr.substring(0, 7);
-          if (last6Months[mKey]) {
-            last6Months[mKey].checked++;
-          }
-        }
-        const mKey = dateStr.substring(0, 7);
-        if (last6Months[mKey]) {
-          last6Months[mKey].total++;
-        }
+        if (status === 1) dayOfWeekCounts[day].checked++;
       });
     });
 
@@ -72,27 +70,80 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
       percentage: c.possible === 0 ? 0 : Math.round((c.checked / c.possible) * 100)
     }));
 
+    // 3. Monthly Trends (Last 6 months)
+    const last6Months: Record<string, { checked: number, total: number }> = {};
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      last6Months[key] = { checked: 0, total: 0 };
+    }
+
+    habits.forEach(habit => {
+      Object.entries(habit.data).forEach(([dateStr, status]) => {
+        const mKey = dateStr.substring(0, 7);
+        if (last6Months[mKey]) {
+          last6Months[mKey].total++;
+          if (status === 1) last6Months[mKey].checked++;
+        }
+      });
+    });
+
     const monthlyTrendData = Object.entries(last6Months).map(([label, stats]) => ({
       label: new Date(label + "-01").toLocaleDateString('en-US', { month: 'short' }),
       rate: stats.total === 0 ? 0 : Math.round((stats.checked / stats.total) * 100)
     }));
 
+    // 4. Rankings
+    const habitRankings = habits.map(h => {
+      const dataKeys = Object.keys(h.data);
+      const checks = dataKeys.filter(k => h.data[k] === 1).length;
+      const rate = dataKeys.length === 0 ? 0 : Math.round((checks / dataKeys.length) * 100);
+      return { id: h.id, name: h.name, rate, checks };
+    }).sort((a, b) => b.rate - a.rate);
+
+    // 5. Macro Stats
+    let totalChecks = 0;
+    let totalPossible = 0;
+    let earliestDate: Date | null = null;
+
+    habits.forEach(h => {
+      Object.entries(h.data).forEach(([dateKey, val]) => {
+        totalPossible++;
+        if (val === 1) totalChecks++;
+        const d = new Date(dateKey);
+        if (!earliestDate || d < earliestDate) earliestDate = d;
+      });
+    });
+
+    const globalMomentum = totalPossible === 0 ? 0 : (totalChecks / totalPossible) * 100;
+    const activeJourneyDays = earliestDate ? Math.max(1, Math.ceil((today.getTime() - earliestDate.getTime()) / (1000 * 3600 * 24))) : 0;
+
+    // 6. Correlations
     const correlations: Array<{ pair: [string, string], score: number }> = [];
     if (habits.length > 1) {
       for (let i = 0; i < habits.length; i++) {
         for (let j = i + 1; j < habits.length; j++) {
           const h1 = habits[i];
           const h2 = habits[j];
-          const commonDates = Object.keys(h1.data).filter(d => h2.data[d] !== undefined);
-          if (commonDates.length === 0) continue;
-          const bothDone = commonDates.filter(d => h1.data[d] === 1 && h2.data[d] === 1).length;
-          const score = Math.round((bothDone / commonDates.length) * 100);
+          const h1Checked = Object.keys(h1.data).filter(d => h1.data[d] === 1);
+          if (h1Checked.length === 0) continue;
+          const bothDone = h1Checked.filter(d => h2.data[d] === 1).length;
+          const score = Math.round((bothDone / h1Checked.length) * 100);
           correlations.push({ pair: [h1.name, h2.name], score });
         }
       }
     }
 
-    return { habitRankings, dayLabels, yearGrid, monthlyTrendData, correlations: correlations.sort((a, b) => b.score - a.score).slice(0, 3) };
+    return { 
+      habitRankings, 
+      dayLabels, 
+      yearGridData, 
+      monthlyTrendData, 
+      correlations: correlations.sort((a, b) => b.score - a.score).slice(0, 3),
+      totalChecks,
+      globalMomentum,
+      activeJourneyDays
+    };
   }, [habits]);
 
   const allNotes = useMemo(() => {
@@ -167,7 +218,7 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                     <h3 className="text-lg font-black tracking-tight">Trace Rankings</h3>
                   </div>
                   <div className="space-y-6">
-                    {analytics.habitRankings.map((h, i) => (
+                    {analytics.habitRankings.length > 0 ? analytics.habitRankings.map((h, i) => (
                       <div key={h.id} className="relative">
                         <div className="flex justify-between items-end mb-2">
                           <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">#{i + 1} {h.name}</span>
@@ -184,7 +235,9 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                           />
                         </div>
                       </div>
-                    ))}
+                    )) : (
+                      <p className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 py-10">No data captured yet</p>
+                    )}
                   </div>
                 </section>
 
@@ -208,7 +261,7 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                           <span className="text-[8px] font-black uppercase tracking-tighter text-slate-400">Match Rate</span>
                         </div>
                       </div>
-                    )) : <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 text-center py-4">Need more traces</p>}
+                    )) : <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 text-center py-4">Add more habits to find synergy</p>}
                   </div>
                 </section>
               </div>
@@ -233,17 +286,17 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                   
                   <div className="overflow-x-auto hide-scrollbar">
                     <div className="flex gap-1 min-w-max pb-4">
-                      {Array.from({ length: 52 }).map((_, weekIndex) => (
+                      {analytics.yearGridData.map((week, weekIndex) => (
                         <div key={weekIndex} className="flex flex-col gap-1">
-                          {Array.from({ length: 7 }).map((_, dayIndex) => {
-                             const totalChecks = Math.floor(Math.random() * (habits.length + 1));
-                             const opacity = totalChecks === 0 ? 0.05 : 0.1 + (totalChecks / habits.length) * 0.9;
+                          {week.map((day, dayIndex) => {
+                             const maxChecks = habits.length;
+                             const opacity = day.count === 0 ? 0.05 : 0.1 + (day.count / Math.max(1, maxChecks)) * 0.9;
                              return (
                                <div 
                                  key={dayIndex} 
                                  className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[2px] sm:rounded-sm transition-all hover:scale-125 cursor-help"
                                  style={{ backgroundColor: theme.primary, opacity: opacity }}
-                                 title={`${totalChecks} Checks`}
+                                 title={`${day.date}: ${day.count} Checks`}
                                />
                              );
                           })}
@@ -275,11 +328,14 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                             <div 
                               className="w-full transition-all duration-1000 ease-out"
                               style={{ 
-                                height: `${d.percentage}%`,
+                                height: `${Math.max(5, d.percentage)}%`, // Ensure some visibility
                                 backgroundColor: theme.primary,
-                                opacity: 0.1 + (d.percentage / 100) * 0.9
+                                opacity: d.percentage === 0 ? 0.1 : 0.2 + (d.percentage / 100) * 0.8
                               }}
                             />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                               <span className="text-[7px] font-black rotate-[-90deg]">{d.percentage}%</span>
+                            </div>
                           </div>
                           <span className="text-[9px] font-black uppercase text-slate-400">{d.name}</span>
                         </div>
@@ -301,12 +357,12 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                             <div 
                               className="w-full transition-all duration-1000 ease-out"
                               style={{ 
-                                height: `${m.rate}%`,
+                                height: `${Math.max(5, m.rate)}%`,
                                 backgroundColor: theme.primary,
-                                opacity: 0.1 + (m.rate / 100) * 0.9
+                                opacity: m.rate === 0 ? 0.1 : 0.2 + (m.rate / 100) * 0.8
                               }}
                             />
-                            {m.rate > 80 && <div className="absolute top-1 left-1/2 -translate-x-1/2"><Award size={10} className="text-amber-500" /></div>}
+                            {m.rate >= 90 && <div className="absolute top-1 left-1/2 -translate-x-1/2"><Award size={10} className="text-amber-500" /></div>}
                           </div>
                           <span className="text-[9px] font-black uppercase text-slate-400">{m.label}</span>
                         </div>
@@ -320,20 +376,28 @@ const DetailedDashboard: React.FC<DetailedDashboardProps> = ({ habits, theme, on
                      <TrendingUp size={240} />
                    </div>
                    <div className="relative z-10">
-                     <h4 className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400 mb-2">Predicted Performance</h4>
-                     <p className="text-4xl font-black tracking-tighter leading-none mb-4">Elite Consistency <span className="text-indigo-500">Tier</span></p>
+                     <h4 className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400 mb-2">Calculated Performance</h4>
+                     <p className="text-4xl font-black tracking-tighter leading-none mb-4">
+                       {analytics.globalMomentum > 80 ? 'Elite Tier' : analytics.globalMomentum > 50 ? 'Steady Growth' : 'Building Base'}
+                     </p>
                      <div className="flex items-center gap-4">
                         <div className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
                           <ArrowUpRight size={14} />
-                          <span className="text-[10px] font-black uppercase">Trending +12%</span>
+                          <span className="text-[10px] font-black uppercase">{analytics.globalMomentum.toFixed(1)}% Momentum</span>
                         </div>
-                        <p className="text-[10px] font-bold text-slate-400">Based on last 14 days activity</p>
+                        <p className="text-[10px] font-bold text-slate-400">Real-time macro average</p>
                      </div>
                    </div>
-                   <div className="flex gap-4 relative z-10">
-                      <button className="px-6 py-3 rounded-2xl bg-white text-slate-900 font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
-                        <Share2 size={14} /> Share
-                      </button>
+                   
+                   <div className="grid grid-cols-2 gap-4 relative z-10">
+                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl flex flex-col">
+                         <span className="text-[8px] font-black uppercase text-slate-500">Active Days</span>
+                         <span className="text-xl font-black">{analytics.activeJourneyDays}</span>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 p-4 rounded-2xl flex flex-col">
+                         <span className="text-[8px] font-black uppercase text-slate-500">Total Checks</span>
+                         <span className="text-xl font-black">{analytics.totalChecks >= 1000 ? (analytics.totalChecks / 1000).toFixed(1) + 'k' : analytics.totalChecks}</span>
+                      </div>
                    </div>
                 </section>
               </div>
